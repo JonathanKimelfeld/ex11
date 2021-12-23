@@ -36,7 +36,6 @@ class SymbolTable:
         self.method_table = {}
         # TODO: add this
 
-
     def define(self, name: str, type: str, kind: str) -> None:
         """Defines a new identifier of a given name, type and kind and assigns 
         it a running index. "STATIC" and "FIELD" identifiers have a class scope, 
@@ -50,7 +49,7 @@ class SymbolTable:
         """
         cur_sym = (type, kind, self.var_count(kind))
         if kind in {"ARG", "VAR"}:
-            self.method_table[name] = cur_sym #add identifier to table
+            self.method_table[name] = cur_sym  # add identifier to table
             # and increment the relevant counter
         elif kind in {"STATIC", "FIELD"}:
             self.class_table[name] = cur_sym

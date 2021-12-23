@@ -38,84 +38,56 @@ class CompilationEngine:
         self.writer = VMWriter(output_stream)
         self.tokenizer = jack_tokenizer
         self.symbol_table = SymbolTable()
+        self.class_name = ""
 
     def get_cur_token(self):
         return self.tokenizer.cur_token
 
-        # def print_open_tag(self, tag):
-
-    #     """
-    #     A method which allows us to print the routine labels, and advances
-    #     to the next token.
-    #     """
-    #     self.output_file.write("<" + tag + ">" + "\n")
-
-    def print_close_tag(self, tag):
-        """
-        A method which allows us to print the routine labels, and advances
-        to the next token.
-        """
-        self.output_file.write("</" + tag + ">" + "\n")
-
-    def wrap_tag(self, tag):
-        """
-        A method which allows us to print the routine labels, and advances
-        to the next token.
-        """
-        token = self.get_cur_token()
-        if token in special_sym:
-            token = special_sym[token]
-        token = token.replace("\"", "")
-        self.output_file.write(
-            "<" + tag + "> " + token + " </" + tag + ">" + "\n")
-        self.tokenizer.advance()
-
     def compile_class(self) -> None:
         """Compiles a complete class."""
-
-        self.print_open_tag("class")
-        self.wrap_tag(KEYWORD)
-        self.wrap_tag(IDENTIFIER)
-        self.wrap_tag(SYMBOL)
-        # self.class_block = self.get_block()
+        self.tokenizer.advance()  # "class" # skip
+        self.class_name = self.get_cur_token()
+        self.tokenizer.advance()  # { # skip
         while self.get_cur_token() in {"field", "static"}:
             self.compile_class_var_dec()
         while self.get_cur_token() in {"constructor", "method", "function"}:
             self.compile_subroutine()
-        self.wrap_tag(SYMBOL)
-        self.print_close_tag("class")
+        self.tokenizer.advance()  # } # skip
 
     def compile_class_var_dec(self) -> None:
         """Compiles a static declaration or a field declaration."""
-        self.print_open_tag(CLASS_VAR)
-        self.var_dec_body()
-        self.print_close_tag(CLASS_VAR)
+        field_kind = self.get_cur_token()  # kind
+        field_type = self.get_cur_token()  # type
+        field_name = self.get_cur_token()  # name
+        self.symbol_table.define(field_name, field_type, field_kind)
 
     def compile_subroutine(self) -> None:
         """Compiles a complete method, function, or constructor."""
-        # function, method, constructor
+        is_void = False
         self.symbol_table.start_subroutine()
-        # self.wrap_tag(KEYWORD) # maybe skip because the token is "function"
-        # if self.tokenizer.token_type() == "KEYWORD":
-        #     self.wrap_tag(KEYWORD)  # type
-        # else:
-        #     self.wrap_tag(IDENTIFIER)  # type
-        function_name = self.get_cur_token()  # subroutineName
-        self.tokenizer.advance()  # open par bracket # skip
-        n_params = self.compile_parameter_list()  # get number of parameters
-        self.tokenizer.advance()  # close par bracket # skip
-        self.compile_subroutine_body()
-        self.writer.write_function(function_name, n_params)
-
-    def compile_subroutine_body(self) -> None:
-        """Compiles a complete method, function, or constructor."""
-        # function, method, constructor
-
-        self.tokenizer.advance()  # open bracket {
+        function_type = self.get_cur_token()
+        if self.get_cur_token() == "void":
+            is_void = True
+        function_name = self.class_name + "." + self.get_cur_token()  # name
+        self.tokenizer.advance()  # ( # skip
+        self.skip_params()  # skip all params - not relevant here
+        self.tokenizer.advance()  # ) # skip
+        self.tokenizer.advance()  # { # skip
         while self.get_cur_token() == "var":
-            self.compile_var_dec()
+            self.compile_var_dec()  # get number of locals
+        n_locals = self.symbol_table.count_var
+        self.writer.write_function(function_name, n_locals)
+        if function_type == "constructor":
+            self.alloc_constructor()  # num of fields extra space for "this"
+        elif function_type == "method":
+            self.alloc_method()  # should alloc 1 extra local space for "this"
         self.compile_statements()
-        self.tokenizer.advance()  # close bracket }
+        if is_void:
+            self.writer.write_push("constant", 0)
+        else:
+            pass  # TODO push return value from body? "return something"
+        self.writer.write_return()
+        self.tokenizer.advance()  # } # skip
 
     def compile_subroutine_call(self, flag=True):
         """
@@ -130,49 +102,24 @@ class CompilationEngine:
         self.tokenizer.advance()  # skip (
         n_args = self.compile_expression_list()
         self.tokenizer.advance()  # skip )
-        self.writer.write_call(function_name, n_args) #TODO
-
-    def compile_parameter_list(self) -> int:
-        """Compiles a (possibly empty) parameter list, not including the 
-        enclosing "()".
-        """
-        n_params = 0
-        if self.get_cur_token() != ")":
-            param_type = self.get_cur_token() # type
-            param_name = self.get_cur_token()  # param name
-            n_params += 1
-            self.symbol_table.define(param_name,param_type,"ARG")
-            while self.get_cur_token() == ',':
-                self.tokenizer.advance()  # ,
-                param_type = self.get_cur_token()  # type
-                param_name = self.get_cur_token()  # param name
-                n_params += 1
-                self.symbol_table.define(param_name, param_type, "ARG")
-        return n_params
+        self.writer.write_call(function_name, n_args)  # TODO
 
     def compile_var_dec(self) -> None:
         """Compiles a var declaration."""
-        self.var_dec_body()
-
-    def var_dec_body(self):
-        n_vars = 0
-        self.tokenizer.advance() # always var
-        param_type = self.get_cur_token()  # type
-        param_name = self.get_cur_token()  # param name
-        self.symbol_table.define(param_name, param_type, "VAR")
-        n_vars += 1
+        self.tokenizer.advance()  # always var
+        var_type = self.get_cur_token()  # type
+        var_name = self.get_cur_token()  # name
+        self.symbol_table.define(var_name, var_type, "VAR")
         while self.get_cur_token() != ';':
             self.tokenizer.advance()  # , sym skip
-            param_name = self.get_cur_token()  # var name
-            self.symbol_table.define(param_name, param_type, "VAR")
-            n_vars += 1
+            var_name = self.get_cur_token()  # name
+            self.symbol_table.define(var_name, var_type, "VAR")
         self.tokenizer.advance()  # ;
 
     def compile_statements(self) -> None:
-        """Compiles a sequence of statements, not including the enclosing 
+        """Compiles a sequence of statements, not including the enclosing
         "{}".
         """
-        self.print_open_tag("statements")
         while self.get_cur_token() in STATEMENTS:
             if self.get_cur_token() == "let":
                 self.compile_let()
@@ -184,7 +131,6 @@ class CompilationEngine:
                 self.compile_do()
             elif self.get_cur_token() == "return":
                 self.compile_return()
-        self.print_close_tag("statements")
 
     def compile_do(self) -> None:
         """Compiles a do statement."""
@@ -252,7 +198,7 @@ class CompilationEngine:
         self.print_close_tag("expression")
 
     def compile_term(self) -> None:
-        """Compiles a term. 
+        """Compiles a term.
         This routine is faced with a slight difficulty when
         trying to decide between some of the alternative parsing rules.
         Specifically, if the current token is an identifier, the routing must
@@ -294,3 +240,68 @@ class CompilationEngine:
                 self.wrap_tag(SYMBOL)  # ,
                 self.compile_expression()
         self.print_close_tag("expressionList")
+
+    def skip_params(self):
+        while self.get_cur_token() != "(":
+            self.tokenizer.advance()
+
+    def alloc_constructor(self):
+        fields_num = self.symbol_table.count_field + \
+                     self.symbol_table.count_static
+        self.writer.write_push("constant", fields_num)
+        self.writer.write_call("Memory.alloc", 1)
+        self.writer.write_pop("pointer", 0)
+
+    def alloc_method(self):
+        self.writer.write_push("argument", 0)
+        self.writer.write_pop("pointer", 0)
+
+
+# -------------------------------------------------------------------- #
+# def print_open_tag(self, tag):
+
+#     """
+#     A method which allows us to print the routine labels, and advances
+#     to the next token.
+#     """
+#     self.output_file.write("<" + tag + ">" + "\n")
+
+def print_close_tag(self, tag):
+    """
+    A method which allows us to print the routine labels, and advances
+    to the next token.
+    """
+    self.output_file.write("</" + tag + ">" + "\n")
+
+
+def wrap_tag(self, tag):
+    """
+    A method which allows us to print the routine labels, and advances
+    to the next token.
+    """
+    token = self.get_cur_token()
+    if token in special_sym:
+        token = special_sym[token]
+    token = token.replace("\"", "")
+    self.output_file.write(
+        "<" + tag + "> " + token + " </" + tag + ">" + "\n")
+    self.tokenizer.advance()
+
+#
+# def compile_parameter_list(self) -> int:
+#     """Compiles a (possibly empty) parameter list, not including the
+#     enclosing "()".
+#     """
+#     n_params = 0
+#     if self.get_cur_token() != ")":
+#         param_type = self.get_cur_token()  # type
+#         param_name = self.get_cur_token()  # param name
+#         n_params += 1
+#         self.symbol_table.define(param_name, param_type, "ARG")
+#         while self.get_cur_token() == ',':
+#             self.tokenizer.advance()  # ,
+#             param_type = self.get_cur_token()  # type
+#             param_name = self.get_cur_token()  # param name
+#             n_params += 1
+#             self.symbol_table.define(param_name, param_type, "ARG")
+#     return n_params
