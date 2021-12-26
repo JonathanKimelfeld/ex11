@@ -10,13 +10,15 @@ from VMWriter import *
 
 # ------------------------ DICTIONARIES -----------------------#
 
-OP = {"+", "-", "*", "/", "&", "|", ">", "<", "="}
-UNARY_OP = {"-", "~"}
+OP = {"+": "add", "-": "sub", "*": "Math.multiply 2", "/": "Math.divide 2"}
+#      "&", "|", ">", "<", "="
+UNARY_OP = {'-': "neg", '~': "not"}
 STATEMENTS = {"let", "if", "while", "do", "return"}
 special_sym = {'<': "&lt;", '>': "&gt;", '"': "&quot;", '&': "&amp;"}
 
 # --------------------------- CONSTANTS ---------------------------#
-
+STATIC = "static"
+FIELD = "field"
 SYMBOL = "symbol"
 KEYWORD = "keyword"
 IDENTIFIER = "identifier"
@@ -40,6 +42,7 @@ class CompilationEngine:
         self.tokenizer = jack_tokenizer
         self.symbol_table = SymbolTable()
         self.class_name = ""
+        self.label_counter = 0
 
     def get_cur_token(self):
         return self.tokenizer.cur_token
@@ -84,27 +87,22 @@ class CompilationEngine:
             self.alloc_method()  # should alloc 1 extra local space for "this": line below
             # self.symbol_table.define(THIS, self.class_name, ARG, 0)
         self.compile_statements()
-        if is_void:
-            self.writer.write_push("constant", 0)
-        else:
-            pass  # TODO push return value from body? "return something"
-        self.writer.write_return()
-        self.tokenizer.advance()  # } # skip
+        self.compile_return(is_void)
 
     def compile_subroutine_call(self, flag=True):
         """
         Compiles a subroutine call, flag allows to add another subroutine
         name in case needed.
         """
-        if flag:
-            self.wrap_tag(IDENTIFIER)  # Name (class\var\subroutine)
-        if self.get_cur_token() == ".":
+        func_name = self.get_cur_token()
+        while self.get_cur_token() == ".":
             self.tokenizer.advance()  # . skip the dot
-            function_name = self.get_cur_token()  # subroutineName
+            func_name += self.get_cur_token()  # subroutineName
+            self.tokenizer.advance()  # continue
         self.tokenizer.advance()  # skip (
         n_args = self.compile_expression_list()
         self.tokenizer.advance()  # skip )
-        self.writer.write_call(function_name, n_args)  # TODO
+        self.writer.write_call(func_name, n_args)  # TODO
 
     def compile_var_dec(self) -> None:
         """Compiles a var declaration."""
@@ -135,24 +133,30 @@ class CompilationEngine:
                 self.compile_return()
 
     def get_var_from_table(self, var):
-        if var in self.symbol_table.method_table.keys():
-            return var # return true or false #TODO
-        else:
-            return self.symbol_table.class_table[var]
+        kind = self.symbol_table.kind_of(var)
+        ind = self.symbol_table.index_of(var)
+        if kind == VAR:
+            segment = "local"
+        elif kind == ARG:
+            segment = "argument"
+        elif kind == STATIC:
+            segment = "static"
+        elif kind == FIELD:
+            segment = "this"
+        return segment, ind
 
     def compile_do(self) -> None:
         """Compiles a do statement."""
-        self.tokenizer.advance() # do
+        self.tokenizer.advance()  # do
         self.compile_subroutine_call()
         self.tokenizer.advance()  # ;
         self.writer.write_pop("temp", 0)
 
-
     def compile_let(self) -> None:
         """Compiles a let statement."""
-        self.tokenizer.advance() #(LET)
+        self.tokenizer.advance()  # (LET)
         var_name = self.get_cur_token()  # varName #TODO: consider adding func that advances and gets cur token
-        self.tokenizer.advance() # next token
+        self.tokenizer.advance()  # next token
         # if self.get_cur_token() == "[": # arrays #TODO
         #     # self.wrap_tag(SYMBOL)
         #     self.compile_expression() # put val on the stack
@@ -160,73 +164,68 @@ class CompilationEngine:
         self.tokenizer.advance()  # skip (=)
         self.compile_expression()  # set val
         self.tokenizer.advance()  # skip (;)
-        segment = ""
-        kind = self.symbol_table.kind_of(var_name)
-        ind = self.symbol_table.index_of(var_name)
-        if kind == VAR:
-            segment = "local"
-        elif kind == ARG:
-            segment = "argument"
-        elif kind == STATIC:
-            segment = "static"
-        else kind == FIELD:
-            segment = "this"
+        segment, ind = self.get_var_from_table(var_name)
         self.writer.write_pop(segment, ind)
 
     def compile_while(self, flag=True) -> None:
         """Compiles a while statement."""
-        if flag:
-            self.print_open_tag("whileStatement")
-        self.wrap_tag(KEYWORD)  # while
-        self.wrap_tag(SYMBOL)  # (
+        self.label_counter += 1
+        label_loop = "while_loop_" + str(self.label_counter)
+        label_break = "while_break_" + str(self.label_counter)
+        self.writer.write_label(label_loop)
+        self.tokenizer.advance()  # "while"
+        self.tokenizer.advance()  # (
         self.compile_expression()
-        self.wrap_tag(SYMBOL)  # )
-        self.wrap_tag(SYMBOL)  # {
+        self.tokenizer.advance()  # )
+        self.writer.write_arithmetic("not")
+        self.writer.write_if(label_break)
+        self.tokenizer.advance()  # {
         self.compile_statements()
-        self.wrap_tag(SYMBOL)  # }
-        if flag:
-            self.print_close_tag("whileStatement")
+        self.writer.write_goto(label_loop)
+        self.writer.write_label(label_break)
+        self.tokenizer.advance()  # }
 
-    def compile_return(self, is_void=False) -> None:
+    def compile_return(self) -> None:
         """Compiles a return statement."""
-        self.compile_expression
-        # self.wrap_tag(KEYWORD) return
-        #self.writer.write_push("constant", return_val)
-        if self.get_cur_token() != ';':
-            self.compile_expression()
-        # self.wrap_tag(SYMBOL)  # ;
+        self.tokenizer.advance()  # "return"
+        if self.get_cur_token() != ';':  # not void
+            return_val = self.compile_expression()
+        else:
+            return_val = 0
+        self.writer.write_push("constant", return_val)
+        self.writer.write_return()
+        self.tokenizer.advance()  # ;
 
     def compile_if(self) -> None:
         """Compiles a if statement, possibly with a trailing else clause."""
-        self.label_counter = 0
-        self.tokenizer.advance() # if
-        self.tokenizer.advance() # (
+        self.label_counter += 1
+        self.tokenizer.advance()  # if
+        self.tokenizer.advance()  # (
         self.compile_expression()
+        self.tokenizer.advance()  # )
+        self.tokenizer.advance()  # {
+        self.writer.write_arithmetic("not")
         label1 = "if_begin" + str(self.label_counter)
         label2 = "if_end" + str(self.label_counter)
-        self.writer.write_arithmetic("not")
         self.writer.write_if(label1)
         self.compile_statements()
         self.writer.write_goto(label2)
         self.writer.write_label(label1)
         self.compile_statements()
         self.writer.write_label(label2)
-        self.tokenizer.advance()   # )
-        self.tokenizer.advance()   # {
         self.compile_statements()
-        self.tokenizer.advance()   # }
+        self.tokenizer.advance()  # }
         if self.get_cur_token() == "else":
-            self.tokenizer.advance()   # else
-            self.tokenizer.advance()   # {
+            self.tokenizer.advance()  # else
             self.compile_statements()
-            self.tokenizer.advance()   # }
+            self.tokenizer.advance()  # }
 
     def compile_expression(self) -> None:
         """Compiles an expression."""
         # self.print_open_tag("expression")
         self.compile_term()
         while self.get_cur_token() in OP:
-            self.wrap_tag(SYMBOL)  # op
+            op = OP[self.get_cur_token()]
             self.compile_term()
         # self.print_close_tag("expression")
 
@@ -240,16 +239,19 @@ class CompilationEngine:
         to distinguish between the three possibilities. Any other token is not
         part of this term and should not be advanced over.
         """
-        self.print_open_tag("term")
         if self.tokenizer.token_type() == "INT_CONST":
-            self.wrap_tag("integerConstant")  # integerConstant
+            self.writer.write_push("constant",
+                                   self.get_cur_token())  # intConstant
         elif self.tokenizer.token_type() == "STR_CONST":
-            self.wrap_tag("stringConstant")  # StringConstant
-        elif self.tokenizer.token_type() == "KEYWORD":
+            var_seg, var_ind = self.get_var_from_table(self.get_cur_token())
+            # TODO
+            self.writer.write_push(var_seg, var_ind)  # # stringConstant
+        elif self.tokenizer.token_type() == "KEYWORD":  # TODO
             self.wrap_tag(KEYWORD)  # KeywordConstant
         elif self.tokenizer.token_type() == "IDENTIFIER":
-            self.wrap_tag(IDENTIFIER)  # varName
-            if self.get_cur_token() in {".", "("}:  # call subtoutine
+            var_seg, var_ind = self.get_var_from_table(self.get_cur_token())
+            self.writer.write_push(var_seg, var_ind)  # var name
+            if self.get_cur_token() in {".", "("}:  # call subroutine
                 self.compile_subroutine_call(False)
             if self.get_cur_token() == "[":
                 self.wrap_tag(SYMBOL)
@@ -259,10 +261,10 @@ class CompilationEngine:
             self.wrap_tag(SYMBOL)  # (
             self.compile_expression()
             self.wrap_tag(SYMBOL)  # )
-        elif self.get_cur_token() in UNARY_OP:
-            self.wrap_tag(SYMBOL)  # op
+        elif self.get_cur_token() in UNARY_OP.keys():
+            op = UNARY_OP[self.get_cur_token()]
             self.compile_term()
-        self.print_close_tag("term")
+            self.writer.write_arithmetic(op)
 
     def compile_expression_list(self) -> None:
         """Compiles a (possibly empty) comma-separated list of expressions."""
@@ -283,7 +285,7 @@ class CompilationEngine:
                      self.symbol_table.count_static
         self.writer.write_push("constant", fields_num)
         self.writer.write_call("Memory.alloc", 1)
-        self.writer.write_pop("pointer", 0)
+        self.writer.write_pop("pointer", 0)  # update "this"
 
     def alloc_method(self):
         self.writer.write_push("argument", 0)

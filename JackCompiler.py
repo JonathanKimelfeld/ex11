@@ -21,9 +21,9 @@ def compile_file(
         input_file (typing.TextIO): the file to compile.
         output_file (typing.TextIO): writes all output to this file.
     """
-    # Your code goes here!
-    pass
-
+    tokenizer = JackTokenizer(input_file)
+    compiler = CompilationEngine(tokenizer, output_file)
+    compiler.compile_class()
 
 if "__main__" == __name__:
     # Parses the input path and calls compile_file on each input file.
