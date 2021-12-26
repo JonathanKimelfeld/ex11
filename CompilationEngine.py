@@ -21,6 +21,7 @@ SYMBOL = "symbol"
 KEYWORD = "keyword"
 IDENTIFIER = "identifier"
 CLASS_VAR = "classVarDec"
+THIS = ""  # TODO: what should we send in "this"?
 
 
 class CompilationEngine:
@@ -80,7 +81,8 @@ class CompilationEngine:
         if function_type == "constructor":
             self.alloc_constructor()  # num of fields extra space for "this"
         elif function_type == "method":
-            self.alloc_method()  # should alloc 1 extra local space for "this"
+            self.alloc_method()  # should alloc 1 extra local space for "this": line below
+            # self.symbol_table.define(THIS, self.class_name, ARG, 0)
         self.compile_statements()
         if is_void:
             self.writer.write_push("constant", 0)
@@ -109,11 +111,11 @@ class CompilationEngine:
         self.tokenizer.advance()  # always var
         var_type = self.get_cur_token()  # type
         var_name = self.get_cur_token()  # name
-        self.symbol_table.define(var_name, var_type, "VAR")
+        self.symbol_table.define(var_name, var_type, VAR)
         while self.get_cur_token() != ';':
             self.tokenizer.advance()  # , sym skip
             var_name = self.get_cur_token()  # name
-            self.symbol_table.define(var_name, var_type, "VAR")
+            self.symbol_table.define(var_name, var_type, VAR)
         self.tokenizer.advance()  # ;
 
     def compile_statements(self) -> None:
@@ -132,27 +134,44 @@ class CompilationEngine:
             elif self.get_cur_token() == "return":
                 self.compile_return()
 
+    def get_var_from_table(self, var):
+        if var in self.symbol_table.method_table.keys():
+            return var # return true or false #TODO
+        else:
+            return self.symbol_table.class_table[var]
+
     def compile_do(self) -> None:
         """Compiles a do statement."""
-        self.print_open_tag("doStatement")
-        self.wrap_tag(KEYWORD)  # do
+        self.tokenizer.advance() # do
         self.compile_subroutine_call()
-        self.wrap_tag(SYMBOL)  # ;
-        self.print_close_tag("doStatement")
+        self.tokenizer.advance()  # ;
+        self.writer.write_pop("temp", 0)
+
 
     def compile_let(self) -> None:
         """Compiles a let statement."""
-        self.print_open_tag("letStatement")
-        self.wrap_tag(KEYWORD)  # let
-        self.wrap_tag(IDENTIFIER)  # varName
-        if self.get_cur_token() == "[":
-            self.wrap_tag(SYMBOL)
-            self.compile_expression()
-            self.wrap_tag(SYMBOL)
-        self.wrap_tag(SYMBOL)  # compile =
+        self.tokenizer.advance() #(LET)
+        var_name = self.get_cur_token()  # varName #TODO: consider adding func that advances and gets cur token
+        self.tokenizer.advance() # next token
+        # if self.get_cur_token() == "[": # arrays #TODO
+        #     # self.wrap_tag(SYMBOL)
+        #     self.compile_expression() # put val on the stack
+        #     # self.wrap_tag(SYMBOL)
+        self.tokenizer.advance()  # skip (=)
         self.compile_expression()  # set val
-        self.wrap_tag(SYMBOL)  # ;
-        self.print_close_tag("letStatement")
+        self.tokenizer.advance()  # skip (;)
+        segment = ""
+        kind = self.symbol_table.kind_of(var_name)
+        ind = self.symbol_table.index_of(var_name)
+        if kind == VAR:
+            segment = "local"
+        elif kind == ARG:
+            segment = "argument"
+        elif kind == STATIC:
+            segment = "static"
+        else kind == FIELD:
+            segment = "this"
+        self.writer.write_pop(segment, ind)
 
     def compile_while(self, flag=True) -> None:
         """Compiles a while statement."""
@@ -168,34 +187,48 @@ class CompilationEngine:
         if flag:
             self.print_close_tag("whileStatement")
 
-    def compile_return(self) -> None:
+    def compile_return(self, is_void=False) -> None:
         """Compiles a return statement."""
-        self.print_open_tag("returnStatement")
-        self.wrap_tag(KEYWORD)  # return
+        self.compile_expression
+        # self.wrap_tag(KEYWORD) return
+        #self.writer.write_push("constant", return_val)
         if self.get_cur_token() != ';':
             self.compile_expression()
-        self.wrap_tag(SYMBOL)  # ;
-        self.print_close_tag("returnStatement")
+        # self.wrap_tag(SYMBOL)  # ;
 
     def compile_if(self) -> None:
         """Compiles a if statement, possibly with a trailing else clause."""
-        self.print_open_tag("ifStatement")
-        self.compile_while(False)
+        self.label_counter = 0
+        self.tokenizer.advance() # if
+        self.tokenizer.advance() # (
+        self.compile_expression()
+        label1 = "if_begin" + str(self.label_counter)
+        label2 = "if_end" + str(self.label_counter)
+        self.writer.write_arithmetic("not")
+        self.writer.write_if(label1)
+        self.compile_statements()
+        self.writer.write_goto(label2)
+        self.writer.write_label(label1)
+        self.compile_statements()
+        self.writer.write_label(label2)
+        self.tokenizer.advance()   # )
+        self.tokenizer.advance()   # {
+        self.compile_statements()
+        self.tokenizer.advance()   # }
         if self.get_cur_token() == "else":
-            self.wrap_tag(KEYWORD)  # else
-            self.wrap_tag(SYMBOL)  # {
+            self.tokenizer.advance()   # else
+            self.tokenizer.advance()   # {
             self.compile_statements()
-            self.wrap_tag(SYMBOL)  # }
-        self.print_close_tag("ifStatement")
+            self.tokenizer.advance()   # }
 
     def compile_expression(self) -> None:
         """Compiles an expression."""
-        self.print_open_tag("expression")
+        # self.print_open_tag("expression")
         self.compile_term()
         while self.get_cur_token() in OP:
             self.wrap_tag(SYMBOL)  # op
             self.compile_term()
-        self.print_close_tag("expression")
+        # self.print_close_tag("expression")
 
     def compile_term(self) -> None:
         """Compiles a term.

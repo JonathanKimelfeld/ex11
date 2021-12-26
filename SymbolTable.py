@@ -7,7 +7,7 @@ Unported License (https://creativecommons.org/licenses/by-nc-sa/3.0/).
 import typing
 
 ARG = "ARG"
-
+VAR = "VAR"
 # dictionary indices
 TYPE = 0
 KIND = 1
@@ -51,8 +51,16 @@ class SymbolTable:
         if kind in {"ARG", "VAR"}:
             self.method_table[name] = cur_sym  # add identifier to table
             # and increment the relevant counter
+            if kind == ARG:
+                self.count_arg += 1
+            else:
+                self.count_var += 1
         elif kind in {"STATIC", "FIELD"}:
             self.class_table[name] = cur_sym
+            if kind == "STATIC":
+                self.count_static += 1
+            else:
+                self.count_field += 1
 
     def var_count(self, kind: str) -> int:
         """
