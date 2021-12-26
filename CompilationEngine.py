@@ -224,12 +224,11 @@ class CompilationEngine:
 
     def compile_expression(self) -> None:
         """Compiles an expression."""
-        # self.print_open_tag("expression")
         self.compile_term()
         while self.get_cur_token() in OP:
             op = OP[self.get_cur_token(True)]
             self.compile_term()
-        # self.print_close_tag("expression")
+            self.writer.write_arithmetic(op)
 
     def compile_term(self) -> None:
         """Compiles a term.
