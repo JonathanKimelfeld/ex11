@@ -110,8 +110,8 @@ class CompilationEngine:
     def compile_var_dec(self) -> None:
         """Compiles a var declaration."""
         self.tokenizer.advance()  # always var
-        var_type = self.get_cur_token()  # type
-        var_name = self.get_cur_token()  # name
+        var_type = self.get_cur_token(True)  # type
+        var_name = self.get_cur_token(True)  # name
         self.symbol_table.define(var_name, var_type, VAR)
         while self.get_cur_token() != ';':
             self.tokenizer.advance()  # , sym skip
@@ -158,8 +158,7 @@ class CompilationEngine:
     def compile_let(self) -> None:
         """Compiles a let statement."""
         self.tokenizer.advance()  # (LET)
-        var_name = self.get_cur_token()  # varName #TODO: consider adding func that advances and gets cur token
-        self.tokenizer.advance()  # next token
+        var_name = self.get_cur_token(True)  # varName
         # if self.get_cur_token() == "[": # arrays #TODO
         #     # self.wrap_tag(SYMBOL)
         #     self.compile_expression() # put val on the stack
@@ -265,7 +264,7 @@ class CompilationEngine:
             self.compile_expression()
             self.tokenizer.advance()  # )
         elif self.get_cur_token() in UNARY_OP.keys():
-            op = UNARY_OP[self.get_cur_token()]
+            op = UNARY_OP[self.get_cur_token(True)]
             self.compile_term()
             self.writer.write_arithmetic(op)
 
