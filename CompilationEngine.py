@@ -11,8 +11,8 @@ from VMWriter import *
 # ------------------------ DICTIONARIES -----------------------#
 
 OP = {"+": "add", "-": "sub", "*": "call Math.multiply 2",
-      "/": "call Math.divide 2", '<': "lt;", '>': "gt;",
-      '"': "&quot;", '&': "and;", '=': "eq"}
+      "/": "call Math.divide 2", '<': "lt", '>': "gt",
+      '"': "&quot;", '&': "and", '=': "eq"}
 #       "|", "="
 UNARY_OP = {'-': "neg", '~': "not"}
 STATEMENTS = {"let", "if", "while", "do", "return"}
@@ -65,19 +65,23 @@ class CompilationEngine:
 
     def compile_class_var_dec(self) -> None:
         """Compiles a static declaration or a field declaration."""
-        field_kind = self.get_cur_token()  # kind
-        field_type = self.get_cur_token()  # type
-        field_name = self.get_cur_token()  # name
+        field_kind = self.get_cur_token(True)  # kind
+        field_type = self.get_cur_token(True)  # type
+        field_name = self.get_cur_token(True)  # name
         self.symbol_table.define(field_name, field_type, field_kind)
+        while self.get_cur_token() != ';':
+            self.tokenizer.advance()  # , sym skip
+            field_name = self.get_cur_token(True)  # name
+            self.symbol_table.define(field_name, field_type, field_kind)
+        self.tokenizer.advance()  # ;
 
     def compile_subroutine(self) -> None:
         """Compiles a complete method, function, or constructor."""
-        is_void = False
         self.symbol_table.start_subroutine()
         function_type = self.get_cur_token(True)
-        if self.get_cur_token(True) == "void":
-            is_void = True
-        function_name = self.class_name + "." + self.get_cur_token(True)  # name
+        self.tokenizer.advance()  # void
+        function_name = self.class_name + "." + self.get_cur_token(
+            True)  # name
         self.tokenizer.advance()  # ( # skip
         # self.compile_subroutine_call # TODO
         if self.get_cur_token() == ")":
@@ -123,7 +127,7 @@ class CompilationEngine:
         self.symbol_table.define(var_name, var_type, VAR)
         while self.get_cur_token() != ';':
             self.tokenizer.advance()  # , sym skip
-            var_name = self.get_cur_token()  # name
+            var_name = self.get_cur_token(True)  # name
             self.symbol_table.define(var_name, var_type, VAR)
         self.tokenizer.advance()  # ;
 
@@ -199,10 +203,9 @@ class CompilationEngine:
         """Compiles a return statement."""
         self.tokenizer.advance()  # "return"
         if self.get_cur_token() != ';':  # not void
-            return_val = self.compile_expression()
+            self.compile_expression()
         else:
-            return_val = 0
-        self.writer.write_push("constant", return_val)
+            self.writer.write_push("constant", 0)
         self.writer.write_return()
         self.tokenizer.advance()  # ;
 
@@ -215,20 +218,18 @@ class CompilationEngine:
         self.tokenizer.advance()  # )
         self.tokenizer.advance()  # {
         self.writer.write_arithmetic("not")
-        label1 = "IF_START" + str(self.label_counter)
-        label2 = "IF_END" + str(self.label_counter)
-        self.writer.write_if(label1)
-        self.compile_statements()
-        self.writer.write_goto(label2)
-        self.writer.write_label(label1)
-        self.compile_statements()
-        self.writer.write_label(label2)
+        false_label = "IF_FALSE" + str(self.label_counter)
+        end_label = "IF_END" + str(self.label_counter)
+        self.writer.write_if(false_label)  # go to else block
         self.compile_statements()
         self.tokenizer.advance()  # }
-        if self.get_cur_token() == "else":
-            self.tokenizer.advance()  # else
+        self.writer.write_goto(end_label)  # end true block
+        self.writer.write_label(false_label)
+        if self.get_cur_token(True) == "else":
+            self.tokenizer.advance()  # {
             self.compile_statements()
             self.tokenizer.advance()  # }
+        self.writer.write_label(end_label)
 
     def compile_expression(self) -> None:
         """Compiles an expression."""
@@ -252,7 +253,8 @@ class CompilationEngine:
             self.writer.write_push("constant",
                                    self.get_cur_token(True))  # intConstant
         elif self.tokenizer.token_type() == "STR_CONST":
-            var_seg, var_ind = self.get_var_from_table(self.get_cur_token())  # TODO
+            var_seg, var_ind = self.get_var_from_table(
+                self.get_cur_token())  # TODO
             self.writer.write_push(var_seg, var_ind)  # # stringConstant
         elif self.tokenizer.token_type() == "KEYWORD":  # TODO
             self.writer.write_constant(self.get_cur_token(True))

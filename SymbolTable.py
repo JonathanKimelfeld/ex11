@@ -34,7 +34,9 @@ class SymbolTable:
         symbol table).
         """
         self.method_table = {}
-        # TODO: add this
+        self.count_var = 0
+        self.count_arg = 0
+
 
     def define(self, name: str, type: str, kind: str) -> None:
         """Defines a new identifier of a given name, type and kind and assigns 
@@ -55,7 +57,7 @@ class SymbolTable:
                 self.count_arg += 1
             else:
                 self.count_var += 1
-        elif kind in {"STATIC", "FIELD"}:
+        elif kind in {"static", "field"}:
             self.class_table[name] = cur_sym
             if kind == "STATIC":
                 self.count_static += 1
@@ -75,9 +77,9 @@ class SymbolTable:
             return self.count_var
         elif kind == "ARG":
             return self.count_arg
-        elif kind == "FIELD":
+        elif kind == "field":
             return self.count_field
-        elif kind == "STATIC":
+        elif kind == "static":
             return self.count_static
 
     def kind_of(self, name: str) -> str:
