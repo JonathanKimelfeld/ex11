@@ -38,12 +38,12 @@ class VMWriter:
 
     def write_arithmetic(self, command: str) -> None:
         """Writes a VM arithmetic command.
-
+F
         Args:
             command (str): the command to write, can be "ADD", "SUB", "NEG", 
             "EQ", "GT", "LT", "AND", "OR", "NOT".
         """
-        self.output_stream.write(command.lower()+"\n")
+        self.output_stream.write(command+"\n")
 
     def write_label(self, label: str) -> None:
         """Writes a VM label command.
@@ -51,7 +51,7 @@ class VMWriter:
         Args:
             label (str): the label to write.
         """
-        self.output_stream.write("({})\n".format(label))
+        self.output_stream.write("label {}\n".format(label))
 
     def write_goto(self, label: str) -> None:
         """Writes a VM goto command.
@@ -87,6 +87,18 @@ class VMWriter:
             n_locals (int): the number of local variables the function uses.
         """
         self.output_stream.write("function {0} {1}\n".format(name, n_locals))
+
+    def write_constant(self, keyword) -> None:
+        """Reviews which Jack constant is referenced and executes it. """
+        if keyword in {"null", "false"}:
+            self.write_push("constant", 0)
+        elif keyword == "true":
+            self.write_push("constant", 1)
+            self.write_arithmetic("neg")
+        elif keyword == "this":
+            self.write_push("pointer", 0)
+
+
 
     def write_return(self) -> None:
         """Writes a VM return command."""
