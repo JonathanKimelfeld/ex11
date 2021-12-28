@@ -98,7 +98,14 @@ F
         elif keyword == "this":
             self.write_push("pointer", 0)
 
-
+    def write_string(self, string):
+        string = string[1:-1]  # remove parenthesis
+        str_len = len(string)
+        self.write_push("constant", str_len)
+        self.write_call("String.new", 1)
+        for i in range(str_len):
+            self.write_push("constant", ord(string[i]))
+            self.write_call("String.appendChar", 2)
 
     def write_return(self) -> None:
         """Writes a VM return command."""

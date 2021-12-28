@@ -181,15 +181,26 @@ class CompilationEngine:
         """Compiles a let statement."""
         self.tokenizer.advance()  # (LET)
         var_name = self.get_cur_token(True)  # varName
-        # if self.get_cur_token() == "[": # arrays #TODO
-        #     # self.wrap_tag(SYMBOL)
-        #     self.compile_expression() # put val on the stack
-        #     # self.wrap_tag(SYMBOL)
-        self.tokenizer.advance()  # skip (=)
-        self.compile_expression()  # set val
-        self.tokenizer.advance()  # skip (;)
         segment, ind = self.get_var_from_table(var_name)
-        self.writer.write_pop(segment, ind)
+        if self.get_cur_token() == "[":  # arrays
+            self.tokenizer.advance()  # "["
+            self.compile_expression()  # put index on the stack
+            self.tokenizer.advance()  # "]"
+            self.writer.write_push(segment, ind)
+            self.writer.write_arithmetic("add")
+            self.tokenizer.advance()  # skip (=)
+            self.compile_expression()  # set val
+            self.writer.write_pop("temp", 0)
+            self.writer.write_pop("pointer", 1)
+            self.writer.write_push("temp", 0)
+            self.writer.write_pop("that", 0)
+            self.tokenizer.advance()  # skip (;)
+        else:
+            self.tokenizer.advance()  # skip (=)
+            self.compile_expression()  # set val
+            self.tokenizer.advance()  # skip (;)
+            segment, ind = self.get_var_from_table(var_name)
+            self.writer.write_pop(segment, ind)
 
     def compile_while(self, flag=True) -> None:
         """Compiles a while statement."""
@@ -264,19 +275,22 @@ class CompilationEngine:
             self.writer.write_push("constant",
                                    self.get_cur_token(True))  # intConstant
         elif self.tokenizer.token_type() == "STR_CONST":
-            var_seg, var_ind = self.get_var_from_table(
-                self.get_cur_token())  # TODO
-            self.writer.write_push(var_seg, var_ind)  # # stringConstant
-        elif self.tokenizer.token_type() == "KEYWORD":  # TODO
+            self.writer.write_string(self.get_cur_token(True))  # string constant
+        elif self.tokenizer.token_type() == "KEYWORD":
             self.writer.write_constant(self.get_cur_token(True))
         elif self.tokenizer.token_type() == "IDENTIFIER":
             temp = self.get_cur_token(True)
             if self.get_cur_token() in {".", "("}:  # call subroutine
                 self.compile_subroutine_call(temp)
-            # if self.get_cur_token() == "[":
-            # self.wrap_tag(SYMBOL)
-            # self.compile_expression()
-            # self.wrap_tag(SYMBOL)
+            elif self.get_cur_token() == "[":
+                self.tokenizer.advance()  # "["
+                self.compile_expression()  # put index on the stack
+                self.tokenizer.advance()  # "]"
+                segment, ind = self.get_var_from_table(temp)
+                self.writer.write_push(segment, ind)
+                self.writer.write_arithmetic("add")
+                self.writer.write_pop("pointer", 1)
+                self.writer.write_push("that", 0)
             else:
                 var_seg, var_ind = self.get_var_from_table(temp)
                 self.writer.write_push(var_seg, var_ind)  # var name
