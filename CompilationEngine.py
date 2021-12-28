@@ -12,8 +12,7 @@ from VMWriter import *
 
 OP = {"+": "add", "-": "sub", "*": "call Math.multiply 2",
       "/": "call Math.divide 2", '<': "lt", '>': "gt",
-      '"': "&quot;", '&': "and", '=': "eq"}
-#       "|", "="
+      '"': "&quot;", '&': "and", '=': "eq", '|': "or"}
 UNARY_OP = {'-': "neg", '~': "not"}
 STATEMENTS = {"let", "if", "while", "do", "return"}
 # special_sym = {}
@@ -79,6 +78,8 @@ class CompilationEngine:
         """Compiles a complete method, function, or constructor."""
         self.symbol_table.start_subroutine()
         function_type = self.get_cur_token(True)
+        if function_type == "method":
+            self.symbol_table.define("this", self.class_name, ARG)
         self.tokenizer.advance()  # void
         function_name = self.class_name + "." + self.get_cur_token(
             True)  # name
