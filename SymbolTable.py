@@ -37,7 +37,6 @@ class SymbolTable:
         self.count_var = 0
         self.count_arg = 0
 
-
     def define(self, name: str, type: str, kind: str) -> None:
         """Defines a new identifier of a given name, type and kind and assigns 
         it a running index. "STATIC" and "FIELD" identifiers have a class scope, 
@@ -121,3 +120,6 @@ class SymbolTable:
             return self.method_table[name][INDEX]
         else:  # TODO we assume hat name in self.class_table.keys(): - is this true?
             return self.class_table[name][INDEX]
+
+    def does_exist(self, name):
+        return name in self.class_table.keys() or name in self.method_table.keys()

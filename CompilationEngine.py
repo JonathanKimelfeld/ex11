@@ -107,15 +107,21 @@ class CompilationEngine:
         Compiles a subroutine call, flag allows to add another subroutine
         name in case needed.
         """
+        method_args = 0
         if sub_name:
             func_name = sub_name
         else:
             func_name = self.get_cur_token(True)
+        if self.symbol_table.does_exist(func_name):  # object method
+            segment, ind = self.get_var_from_table(func_name)
+            self.writer.write_push(segment, ind)  # push object as first arg
+            func_name = self.symbol_table.type_of(func_name)
+            method_args += 1
         while self.get_cur_token() == ".":
             func_name += self.get_cur_token(True)  # . add dot
             func_name += self.get_cur_token(True)  # subroutineName
         self.tokenizer.advance()  # skip (
-        n_args = self.compile_expression_list()
+        n_args = self.compile_expression_list() + method_args
         self.tokenizer.advance()  # skip )
         self.writer.write_call(func_name, n_args)
 
