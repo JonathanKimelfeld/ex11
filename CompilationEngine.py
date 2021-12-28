@@ -112,12 +112,16 @@ class CompilationEngine:
             func_name = sub_name
         else:
             func_name = self.get_cur_token(True)
-        if self.symbol_table.does_exist(func_name):  # object method
-            segment, ind = self.get_var_from_table(func_name)
-            self.writer.write_push(segment, ind)  # push object as first arg
-            func_name = self.symbol_table.type_of(func_name)
+        if self.get_cur_token() == "(":
+            func_name = self.class_name + "." + func_name
+            self.writer.write_push("pointer", 0)  # push this as first arg
             method_args += 1
-        while self.get_cur_token() == ".":
+        elif self.get_cur_token() == ".":
+            if self.symbol_table.does_exist(func_name):  # object method (b.foo())
+                segment, ind = self.get_var_from_table(func_name)
+                self.writer.write_push(segment, ind)  # push object as first arg
+                func_name = self.symbol_table.type_of(func_name)
+                method_args += 1
             func_name += self.get_cur_token(True)  # . add dot
             func_name += self.get_cur_token(True)  # subroutineName
         self.tokenizer.advance()  # skip (
@@ -231,7 +235,8 @@ class CompilationEngine:
         self.tokenizer.advance()  # }
         self.writer.write_goto(end_label)  # end true block
         self.writer.write_label(false_label)
-        if self.get_cur_token(True) == "else":
+        if self.get_cur_token() == "else":
+            self.tokenizer.advance()  # "else"
             self.tokenizer.advance()  # {
             self.compile_statements()
             self.tokenizer.advance()  # }
