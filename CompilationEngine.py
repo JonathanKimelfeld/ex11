@@ -13,23 +13,30 @@ from VMWriter import *
 OP = {"+": "add", "-": "sub", "*": "call Math.multiply 2",
       "/": "call Math.divide 2", '<': "lt", '>': "gt",
       '"': "&quot;", '&': "and", '=': "eq", '|': "or"}
-UNARY_OP = {'-': "neg", '~': "not"}
+UNARY_OP = {'-': "neg", '~': "not", '^': "shiftleft", '#': "shiftright"}
 STATEMENTS = {"let", "if", "while", "do", "return"}
-# special_sym = {}
 
 # --------------------------- CONSTANTS ---------------------------#
+
 STATIC = "static"
 FIELD = "field"
+CONSTRUCTOR = "constructor"
+METHOD = "method"
+FUNCTION = "function"
+OPEN_BRACKET = '('
+CLOSE_BRACKET = ')'
 SYMBOL = "symbol"
 KEYWORD = "keyword"
+POINTER = "pointer"
 IDENTIFIER = "identifier"
 CLASS_VAR = "classVarDec"
-THIS = ""  # TODO: what should we send in "this"?
+WHILE_START_LABEL = "WHILE_EXP"
+WHILE_END_LABEL = "WHILE_END"
 
 
 class CompilationEngine:
-    """Gets input from a JackTokenizer.py and emits its parsed structure into an
-    output stream.
+    """Gets input from a JackTokenizer.py and emits its parsed structure into
+     an output stream.
     """
 
     def __init__(self, jack_tokenizer, output_stream) -> None:
@@ -56,9 +63,9 @@ class CompilationEngine:
         self.tokenizer.advance()  # "class" # skip
         self.class_name = self.get_cur_token(True)
         self.tokenizer.advance()  # { # skip
-        while self.get_cur_token() in {"field", "static"}:
+        while self.get_cur_token() in {FIELD, STATIC}:
             self.compile_class_var_dec()
-        while self.get_cur_token() in {"constructor", "method", "function"}:
+        while self.get_cur_token() in {CONSTRUCTOR, METHOD, FUNCTION}:
             self.compile_subroutine()
         self.tokenizer.advance()  # } # skip
 
@@ -78,14 +85,13 @@ class CompilationEngine:
         """Compiles a complete method, function, or constructor."""
         self.symbol_table.start_subroutine()
         function_type = self.get_cur_token(True)
-        if function_type == "method":
+        if function_type == METHOD:
             self.symbol_table.define("this", self.class_name, ARG)
         self.tokenizer.advance()  # void
         function_name = self.class_name + "." + self.get_cur_token(
             True)  # name
         self.tokenizer.advance()  # ( # skip
-        # self.compile_subroutine_call # TODO
-        if self.get_cur_token() == ")":
+        if self.get_cur_token() == CLOSE_BRACKET:
             self.tokenizer.advance()  # ) # skip, no params given
         else:
             self.compile_parameter_list()
@@ -95,37 +101,39 @@ class CompilationEngine:
             self.compile_var_dec()  # get number of locals
         n_locals = self.symbol_table.count_var
         self.writer.write_function(function_name, n_locals)
-        if function_type == "constructor":
+        if function_type == CONSTRUCTOR:
             self.alloc_constructor()  # num of fields extra space for "this"
-        elif function_type == "method":
-            self.alloc_method()  # should alloc 1 extra local space for "this": line below
-            # self.symbol_table.define(THIS, self.class_name, ARG, 0)
+        elif function_type == METHOD:
+            self.alloc_method()  # should alloc 1 extra local space for "this"
         self.compile_statements()
         self.tokenizer.advance()  # } skip
 
-    def compile_subroutine_call(self, sub_name=None):
+    def compile_subroutine_call(self, curr_name=None):
         """
         Compiles a subroutine call, flag allows to add another subroutine
         name in case needed.
         """
         method_args = 0
-        if sub_name:
-            func_name = sub_name
+        if curr_name:  # from term and we passed the function name
+            func_name = curr_name
         else:
             func_name = self.get_cur_token(True)
-        if self.get_cur_token() == "(":
+        if self.get_cur_token() == OPEN_BRACKET:
             func_name = self.class_name + "." + func_name
-            self.writer.write_push("pointer", 0)  # push this as first arg
+            self.writer.write_push(POINTER, 0)  # push this as first arg
             method_args += 1
         elif self.get_cur_token() == ".":
-            if self.symbol_table.does_exist(func_name):  # object method (b.foo())
+            if self.symbol_table.does_exist(
+                    func_name):  # object method (b.foo())
                 segment, ind = self.get_var_from_table(func_name)
-                self.writer.write_push(segment, ind)  # push object as first arg
+                self.writer.write_push(segment,
+                                       ind)  # push object as first arg
                 func_name = self.symbol_table.type_of(func_name)
                 method_args += 1
             func_name += self.get_cur_token(True)  # . add dot
             func_name += self.get_cur_token(True)  # subroutineName
         self.tokenizer.advance()  # skip (
+        n_args = self.compile_expression_list() + method_args
         n_args = self.compile_expression_list() + method_args
         self.tokenizer.advance()  # skip )
         self.writer.write_call(func_name, n_args)
@@ -166,7 +174,7 @@ class CompilationEngine:
         elif kind == ARG:
             segment = "argument"
         elif kind == STATIC:
-            segment = "static"
+            segment = STATIC
         elif kind == FIELD:
             segment = "this"
         return segment, ind
@@ -192,7 +200,7 @@ class CompilationEngine:
             self.tokenizer.advance()  # skip (=)
             self.compile_expression()  # set val
             self.writer.write_pop("temp", 0)
-            self.writer.write_pop("pointer", 1)
+            self.writer.write_pop(POINTER, 1)
             self.writer.write_push("temp", 0)
             self.writer.write_pop("that", 0)
             self.tokenizer.advance()  # skip (;)
@@ -203,10 +211,10 @@ class CompilationEngine:
             segment, ind = self.get_var_from_table(var_name)
             self.writer.write_pop(segment, ind)
 
-    def compile_while(self, flag=True) -> None:
+    def compile_while(self) -> None:
         """Compiles a while statement."""
-        label_loop = "WHILE_EXP" + str(self.label_counter)
-        label_break = "WHILE_END" + str(self.label_counter)
+        label_loop = WHILE_START_LABEL + str(self.label_counter)
+        label_break = WHILE_END_LABEL + str(self.label_counter)
         self.label_counter += 1
         self.writer.write_label(label_loop)
         self.tokenizer.advance()  # "while"
@@ -276,7 +284,8 @@ class CompilationEngine:
             self.writer.write_push("constant",
                                    self.get_cur_token(True))  # intConstant
         elif self.tokenizer.token_type() == "STR_CONST":
-            self.writer.write_string(self.get_cur_token(True))  # string constant
+            self.writer.write_string(
+                self.get_cur_token(True))  # string constant
         elif self.tokenizer.token_type() == "KEYWORD":
             self.writer.write_constant(self.get_cur_token(True))
         elif self.tokenizer.token_type() == "IDENTIFIER":
@@ -307,7 +316,7 @@ class CompilationEngine:
     def compile_expression_list(self) -> int:
         """Compiles a (possibly empty) comma-separated list of expressions."""
         exp_counter = 0
-        if self.get_cur_token() != ")":
+        if self.get_cur_token() != CLOSE_BRACKET:
             self.compile_expression()
             exp_counter += 1
             while self.get_cur_token() == ',':
@@ -315,10 +324,6 @@ class CompilationEngine:
                 self.compile_expression()
                 exp_counter += 1
         return exp_counter
-
-    # def skip_params(self):
-    #     while self.get_cur_token() != ")":
-    #         self.tokenizer.advance()
 
     def alloc_constructor(self):
         fields_num = self.symbol_table.count_field + \
@@ -336,7 +341,7 @@ class CompilationEngine:
         enclosing "()".
         """
         n_params = 0
-        if self.get_cur_token() != ")":
+        if self.get_cur_token() != CLOSE_BRACKET:
             param_type = self.get_cur_token(True)  # type
             param_name = self.get_cur_token(True)  # param name
             n_params += 1
@@ -348,36 +353,3 @@ class CompilationEngine:
                 n_params += 1
                 self.symbol_table.define(param_name, param_type, "ARG")
         return
-
-# -------------------------------------------------------------------- #
-# def print_open_tag(self, tag):
-
-#     """
-#     A method which allows us to print the routine labels, and advances
-#     to the next token.
-#     """
-#     self.output_file.write("<" + tag + ">" + "\n")
-
-# def print_close_tag(self, tag):
-#     """
-#     A method which allows us to print the routine labels, and advances
-#     to the next token.
-#     """
-#     self.output_file.write("</" + tag + ">" + "\n")
-#
-
-#
-# def wrap_tag(self, tag):
-#     """
-#     A method which allows us to print the routine labels, and advances
-#     to the next token.
-#     """
-#     token = self.get_cur_token()
-#     if token in special_sym:
-#         token = special_sym[token]
-#     token = token.replace("\"", "")
-#     self.output_file.write(
-#         "<" + tag + "> " + token + " </" + tag + ">" + "\n")
-#     self.tokenizer.advance()
-
-#

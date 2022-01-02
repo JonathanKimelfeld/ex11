@@ -92,7 +92,7 @@ class SymbolTable:
         """
         if name in self.method_table.keys():
             return self.method_table[name][KIND]
-        else:  # TODO we assume hat name in self.class_table.keys(): - is this true?
+        else:
             return self.class_table[name][KIND]
 
     def type_of(self, name: str) -> str:
@@ -105,7 +105,7 @@ class SymbolTable:
         """
         if name in self.method_table.keys():
             return self.method_table[name][TYPE]
-        else:  # TODO we assume hat name in self.class_table.keys(): - is this true?
+        else:
             return self.class_table[name][TYPE]
 
     def index_of(self, name: str) -> int:
@@ -118,8 +118,9 @@ class SymbolTable:
         """
         if name in self.method_table.keys():
             return self.method_table[name][INDEX]
-        else:  # TODO we assume hat name in self.class_table.keys(): - is this true?
+        else:
             return self.class_table[name][INDEX]
 
     def does_exist(self, name):
-        return name in self.class_table.keys() or name in self.method_table.keys()
+        return name in self.class_table.keys() or \
+               name in self.method_table.keys()

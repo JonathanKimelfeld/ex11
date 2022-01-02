@@ -9,7 +9,7 @@ KEYWORDS = ['class', 'constructor', 'function', 'method', 'field',
             'false', 'null', 'this', 'let', 'do', 'if', 'else',
             'while', 'return']
 SYMBOLS = ['{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/',
-           '&', '|', '<', '>', '=', '~']
+           '&', '|', '<', '>', '=', '~', '#', '^']
 
 import typing
 import re
